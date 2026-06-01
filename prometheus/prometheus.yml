@@ -1,0 +1,134 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    server: apps-single-host
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - prometheus:9090
+
+  - job_name: alertmanager
+    static_configs:
+      - targets:
+          - alertmanager:9093
+
+  - job_name: node-exporter
+    static_configs:
+      - targets:
+          - node-exporter:9100
+
+  - job_name: cadvisor
+    static_configs:
+      - targets:
+          - cadvisor:8080
+
+  - job_name: blackbox-exporter
+    static_configs:
+      - targets:
+          - blackbox-exporter:9115
+
+  - job_name: blackbox-http
+    metrics_path: /probe
+    params:
+      module:
+        - http_2xx
+    static_configs:
+      - targets:
+          - http://172.20.0.1:5173/
+        labels:
+          service: metroLog
+          probe_name: metrolog_frontend
+      - targets:
+          - http://172.20.0.1:8000/api/v1/health
+        labels:
+          service: metroLog
+          probe_name: metrolog_health
+      - targets:
+          - http://172.20.0.1:8000/api/v1/health/ready
+        labels:
+          service: metroLog
+          probe_name: metrolog_ready
+      - targets:
+          - http://172.20.0.1:5174/
+        labels:
+          service: metroGen
+          probe_name: metrogen_frontend
+      - targets:
+          - http://172.20.0.1:8001/docs
+        labels:
+          service: metroGen
+          probe_name: metrogen_docs
+      - targets:
+          - http://172.20.0.1:8001/api/v1/resolve/status
+        labels:
+          service: metroGen
+          probe_name: metrogen_resolve_status
+      - targets:
+          - http://172.20.0.1:8002/health
+        labels:
+          service: metroCheck
+          probe_name: metrocheck_health
+
+    relabel_configs:
+      - source_labels:
+          - __address__
+        target_label: __param_target
+      - source_labels:
+          - __param_target
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: blackbox-tcp
+    metrics_path: /probe
+    params:
+      module:
+        - tcp_connect
+    static_configs:
+      - targets:
+          - 172.20.0.1:5432
+        labels:
+          service: metroLog
+          probe_name: metrolog_postgres
+      - targets:
+          - 172.20.0.1:6379
+        labels:
+          service: metroLog
+          probe_name: metrolog_redis
+      - targets:
+          - 172.20.0.1:5433
+        labels:
+          service: metroGen
+          probe_name: metrogen_postgres
+      - targets:
+          - 172.20.0.1:5434
+        labels:
+          service: metroCheck
+          probe_name: metrocheck_postgres
+      - targets:
+          - 172.20.0.1:6382
+        labels:
+          service: metroCheck
+          probe_name: metrocheck_redis
+    relabel_configs:
+      - source_labels:
+          - __address__
+        target_label: __param_target
+      - source_labels:
+          - __param_target
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

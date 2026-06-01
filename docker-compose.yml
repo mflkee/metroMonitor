@@ -1,0 +1,124 @@
+name: monitoring
+
+services:
+  prometheus:
+    container_name: metroMonitoring_prometheus
+    image: prom/prometheus:v3.9.1
+    restart: unless-stopped
+    user: "65534:65534"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-15d}
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:9091:9090"
+    depends_on:
+      - alertmanager
+      - blackbox-exporter
+      - cadvisor
+      - node-exporter
+    networks:
+      - monitoring
+
+  alertmanager:
+    container_name: metroMonitoring_alertmanager
+    image: prom/alertmanager:v0.30.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+    networks:
+      - monitoring
+
+  grafana:
+    container_name: metroMonitoring_grafana
+    image: grafana/grafana:12.3.6
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Yekaterinburg}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-me-before-launch}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SERVER_HTTP_PORT: "3000"
+      GF_SERVER_DOMAIN: ${GRAFANA_PUBLIC_DOMAIN:-grafana.mkair.crazedns.ru}
+      GF_SERVER_ROOT_URL: ${GRAFANA_PUBLIC_SCHEME:-http}://${GRAFANA_PUBLIC_DOMAIN:-grafana.mkair.crazedns.ru}/
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/overview.json
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_BIND_IP:-127.0.0.1}:${GRAFANA_HOST_PORT:-8090}:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - monitoring
+
+  blackbox-exporter:
+    container_name: metroMonitoring_blackbox
+    image: prom/blackbox-exporter:v0.28.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/blackbox_exporter/blackbox.yml
+    volumes:
+      - ./blackbox/blackbox.yml:/etc/blackbox_exporter/blackbox.yml:ro
+    ports:
+      - "127.0.0.1:9115:9115"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - monitoring
+
+  node-exporter:
+    container_name: metroMonitoring_node
+    image: prom/node-exporter:v1.10.2
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+)($|/)
+      - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|mqueue|nsfs|overlay|proc|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$
+    volumes:
+      - /:/host:ro,rslave
+    networks:
+      - monitoring
+
+  cadvisor:
+    container_name: metroMonitoring_cadvisor
+    image: ghcr.io/google/cadvisor:0.56.2
+    restart: unless-stopped
+    privileged: true
+    command:
+      - --housekeeping_interval=30s
+      - --docker_only=true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  alertmanager_data:
