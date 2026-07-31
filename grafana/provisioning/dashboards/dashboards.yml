@@ -1,11 +1,7 @@
 apiVersion: 1
 
 providers:
-  - name: monitoring-dashboards
-    orgId: 1
-    folder: Monitoring
+  - name: dashboards
     type: file
-    disableDeletion: true
-    allowUiUpdates: false
     options:
       path: /var/lib/grafana/dashboards

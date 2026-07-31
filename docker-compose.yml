@@ -1,4 +1,4 @@
-name: monitoring
+name: monitor
 
 services:
   prometheus:
@@ -23,7 +23,7 @@ services:
       - cadvisor
       - node-exporter
     networks:
-      - monitoring
+      - monitor
 
   alertmanager:
     container_name: metroMonitoring_alertmanager
@@ -37,8 +37,20 @@ services:
       - alertmanager_data:/alertmanager
     ports:
       - "127.0.0.1:9093:9093"
+    depends_on:
+      - telegram-bot
     networks:
-      - monitoring
+      - monitor
+
+  telegram-bot:
+    container_name: metroMonitoring_telegram_bot
+    image: ghcr.io/janw/alertmanager-telegram:edge
+    restart: unless-stopped
+    environment:
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+    networks:
+      - monitor
 
   grafana:
     container_name: metroMonitoring_grafana
@@ -51,8 +63,8 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_SERVER_HTTP_PORT: "3000"
-      GF_SERVER_DOMAIN: ${GRAFANA_PUBLIC_DOMAIN:-grafana.mkair.crazedns.ru}
-      GF_SERVER_ROOT_URL: ${GRAFANA_PUBLIC_SCHEME:-http}://${GRAFANA_PUBLIC_DOMAIN:-grafana.mkair.crazedns.ru}/
+      GF_SERVER_DOMAIN: ${GRAFANA_PUBLIC_DOMAIN:-monitor.mkair-it.ru}
+      GF_SERVER_ROOT_URL: ${GRAFANA_PUBLIC_SCHEME:-https}://${GRAFANA_PUBLIC_DOMAIN:-monitor.mkair-it.ru}/
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/overview.json
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
@@ -63,7 +75,7 @@ services:
     depends_on:
       - prometheus
     networks:
-      - monitoring
+      - monitor
 
   blackbox-exporter:
     container_name: metroMonitoring_blackbox
@@ -78,7 +90,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - monitoring
+      - monitor
 
   node-exporter:
     container_name: metroMonitoring_node
@@ -91,7 +103,7 @@ services:
     volumes:
       - /:/host:ro,rslave
     networks:
-      - monitoring
+      - monitor
 
   cadvisor:
     container_name: metroMonitoring_cadvisor
@@ -110,13 +122,13 @@ services:
       - /var/lib/docker:/var/lib/docker:ro
       - /dev/disk:/dev/disk:ro
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8085:8080"
     networks:
-      - monitoring
+      - monitor
 
 networks:
-  monitoring:
-    driver: bridge
+  monitor:
+    external: true
 
 volumes:
   prometheus_data:

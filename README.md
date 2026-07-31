@@ -87,8 +87,20 @@ docker compose up -d
 - дашборд `Apps Monitoring Overview` в Grafana
 - что порты мониторинга не торчат наружу, а слушают только loopback
 
+## Telegram-алерты
+- Alertmanager шлёт алерты через `janw/alertmanager-telegram` (сервис `telegram-bot` в compose).
+- Токен бота и chat_id задаются в `.env`: `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID` (см. `.env.example`).
+- webhook Alertmanager → `http://telegram-bot:8080/alerts`.
+- Проверка webhook:
+  ```bash
+  curl -X POST http://127.0.0.1:9093/api/v1/alerts -H 'Content-Type: application/json' -d '{"alerts":[{"status":"firing","labels":{"alertname":"Test","severity":"warning","service":"test"},"annotations":{"summary":"test alert","description":"check"}}]}'
+  ```
+
+## Stage-контейнеры
+- Stage-пробы вынесены в отдельные jobs `blackbox-http-stg` / `blackbox-tcp-stg` с меткой `env="staging"`.
+- Отслеживаются: `metroCheck` (backend :9002, frontend :9081, postgres :5436, redis :6383) и `metroGen` (api :9001, frontend :9174, postgres :5437).
+
 ## Что нужно сделать позже
-- подключить реальные receivers в `alertmanager.yml`
 - добавить app-level `/metrics`
 - добавить app-level `/health/live` и `/health/ready` для `metroGen`
 - перевести `metroGen` healthcheck с `/docs` на нормальный readiness endpoint

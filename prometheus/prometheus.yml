@@ -3,7 +3,7 @@ global:
   evaluation_interval: 15s
   scrape_timeout: 10s
   external_labels:
-    server: apps-single-host
+    server: mkair-tmn
 
 rule_files:
   - /etc/prometheus/alerts.yml
@@ -47,37 +47,37 @@ scrape_configs:
         - http_2xx
     static_configs:
       - targets:
-          - http://172.20.0.1:5173/
+          - http://host.docker.internal:5173/
         labels:
           service: metroLog
           probe_name: metrolog_frontend
       - targets:
-          - http://172.20.0.1:8000/api/v1/health
+          - http://host.docker.internal:8000/api/v1/health
         labels:
           service: metroLog
           probe_name: metrolog_health
       - targets:
-          - http://172.20.0.1:8000/api/v1/health/ready
+          - http://host.docker.internal:8000/api/v1/health/ready
         labels:
           service: metroLog
           probe_name: metrolog_ready
       - targets:
-          - http://172.20.0.1:5174/
+          - http://host.docker.internal:5174/
         labels:
           service: metroGen
           probe_name: metrogen_frontend
       - targets:
-          - http://172.20.0.1:8001/docs
+          - http://host.docker.internal:8001/docs
         labels:
           service: metroGen
           probe_name: metrogen_docs
       - targets:
-          - http://172.20.0.1:8001/api/v1/resolve/status
+          - http://host.docker.internal:8001/api/v1/resolve/status
         labels:
           service: metroGen
           probe_name: metrogen_resolve_status
       - targets:
-          - http://172.20.0.1:8002/health
+          - http://host.docker.internal:8002/health
         labels:
           service: metroCheck
           probe_name: metrocheck_health
@@ -99,30 +99,204 @@ scrape_configs:
         - tcp_connect
     static_configs:
       - targets:
-          - 172.20.0.1:5432
+          - host.docker.internal:5432
         labels:
           service: metroLog
           probe_name: metrolog_postgres
       - targets:
-          - 172.20.0.1:6379
+          - host.docker.internal:6379
         labels:
           service: metroLog
           probe_name: metrolog_redis
       - targets:
-          - 172.20.0.1:5433
+          - host.docker.internal:5433
         labels:
           service: metroGen
           probe_name: metrogen_postgres
       - targets:
-          - 172.20.0.1:5434
+          - host.docker.internal:5434
         labels:
           service: metroCheck
           probe_name: metrocheck_postgres
       - targets:
-          - 172.20.0.1:6382
+          - host.docker.internal:6382
         labels:
           service: metroCheck
           probe_name: metrocheck_redis
+    relabel_configs:
+      - source_labels:
+          - __address__
+        target_label: __param_target
+      - source_labels:
+          - __param_target
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # ── Stage (staging) probes ──────────────────────────────
+
+  - job_name: blackbox-http-stg
+    metrics_path: /probe
+    params:
+      module:
+        - http_2xx
+    static_configs:
+      - targets:
+          - http://host.docker.internal:9002/health
+        labels:
+          service: metroCheck
+          env: staging
+          probe_name: metrocheck_stg_health
+      - targets:
+          - http://host.docker.internal:9002/health/live
+        labels:
+          service: metroCheck
+          env: staging
+          probe_name: metrocheck_stg_live
+      - targets:
+          - http://host.docker.internal:9081/
+        labels:
+          service: metroCheck
+          env: staging
+          probe_name: metrocheck_stg_frontend
+      - targets:
+          - http://host.docker.internal:9001/api/v1/resolve/status
+        labels:
+          service: metroGen
+          env: staging
+          probe_name: metrogen_stg_resolve_status
+      - targets:
+          - http://host.docker.internal:9001/docs
+        labels:
+          service: metroGen
+          env: staging
+          probe_name: metrogen_stg_docs
+      - targets:
+          - http://host.docker.internal:9174/
+        labels:
+          service: metroGen
+          env: staging
+          probe_name: metrogen_stg_frontend
+
+    relabel_configs:
+      - source_labels:
+          - __address__
+        target_label: __param_target
+      - source_labels:
+          - __param_target
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: blackbox-tcp-stg
+    metrics_path: /probe
+    params:
+      module:
+        - tcp_connect
+    static_configs:
+      - targets:
+          - host.docker.internal:5436
+        labels:
+          service: metroCheck
+          env: staging
+          probe_name: metrocheck_stg_postgres
+      - targets:
+          - host.docker.internal:6383
+        labels:
+          service: metroCheck
+          env: staging
+          probe_name: metrocheck_stg_redis
+      - targets:
+          - host.docker.internal:5437
+        labels:
+          service: metroGen
+          env: staging
+          probe_name: metrogen_stg_postgres
+
+    relabel_configs:
+      - source_labels:
+          - __address__
+        target_label: __param_target
+      - source_labels:
+          - __param_target
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # ── Mail / Cloud Stack ──────────────────────────────────
+
+  - job_name: mail-http
+    metrics_path: /probe
+    params:
+      module:
+        - http_2xx
+    static_configs:
+      - targets:
+          - https://mail.mkair-it.ru/login
+        labels:
+          service: mail
+          probe_name: stalwart
+      - targets:
+          - https://mail.mkair-it.ru/.well-known/oauth-authorization-server
+        labels:
+          service: mail
+          probe_name: stalwart_oauth
+      - targets:
+          - https://webmail.mkair-it.ru/
+        labels:
+          service: mail
+          probe_name: bulwark
+      - targets:
+          - https://cloud.mkair-it.ru/
+        labels:
+          service: mail
+          probe_name: nextcloud
+    relabel_configs:
+      - source_labels:
+          - __address__
+        target_label: __param_target
+      - source_labels:
+          - __param_target
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: mail-tcp
+    metrics_path: /probe
+    params:
+      module:
+        - tcp_connect
+    static_configs:
+      - targets:
+          - host.docker.internal:993
+        labels:
+          service: mail
+          probe_name: imaps
+      - targets:
+          - host.docker.internal:465
+        labels:
+          service: mail
+          probe_name: smtps
+      - targets:
+          - host.docker.internal:587
+        labels:
+          service: mail
+          probe_name: submission
+      - targets:
+          - host.docker.internal:143
+        labels:
+          service: mail
+          probe_name: imap
+      - targets:
+          - host.docker.internal:80
+        labels:
+          service: mail
+          probe_name: npm_http
+      - targets:
+          - host.docker.internal:81
+        labels:
+          service: mail
+          probe_name: npm_admin
     relabel_configs:
       - source_labels:
           - __address__

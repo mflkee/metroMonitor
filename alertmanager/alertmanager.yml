@@ -10,8 +10,18 @@ route:
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity =~ "critical|warning"
+      receiver: telegram
+      continue: false
 
 receivers:
   - name: default-null
+
+  - name: telegram
+    webhook_configs:
+      - url: http://telegram-bot:8080/alerts
+        send_resolved: true
 
 templates: []
