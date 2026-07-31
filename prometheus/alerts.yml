@@ -30,6 +30,15 @@ groups:
           summary: "Host memory pressure is high"
           description: "Memory usage on {{ $labels.instance }} has been above 90% for 10 minutes."
 
+      - alert: HostRootFilesystemUsageWarning
+        expr: ((1 - (node_filesystem_avail_bytes{mountpoint="/", fstype!=""} / node_filesystem_size_bytes{mountpoint="/", fstype!=""})) * 100 > 70) and (node_filesystem_readonly{mountpoint="/", fstype!=""} == 0)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Root filesystem usage is above 70%"
+          description: "Root filesystem usage on {{ $labels.instance }} has been above 70% for 10 minutes."
+
       - alert: HostRootFilesystemUsageHigh
         expr: ((1 - (node_filesystem_avail_bytes{mountpoint="/", fstype!=""} / node_filesystem_size_bytes{mountpoint="/", fstype!=""})) * 100 > 85) and (node_filesystem_readonly{mountpoint="/", fstype!=""} == 0)
         for: 15m
@@ -38,6 +47,33 @@ groups:
         annotations:
           summary: "Root filesystem usage is high"
           description: "Root filesystem usage on {{ $labels.instance }} has been above 85% for 15 minutes."
+
+      - alert: HostBootFilesystemUsageHigh
+        expr: ((1 - (node_filesystem_avail_bytes{mountpoint="/boot", fstype!=""} / node_filesystem_size_bytes{mountpoint="/boot", fstype!=""})) * 100 > 80) and (node_filesystem_readonly{mountpoint="/boot", fstype!=""} == 0)
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Boot filesystem usage is high"
+          description: "Boot filesystem usage on {{ $labels.instance }} has been above 80% for 15 minutes."
+
+      - alert: HostHighTemperature
+        expr: max(node_hwmon_temp_celsius{job="node-exporter", chip=~"platform_coretemp_0|thermal_thermal_zone0"}) > 70
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host temperature is high"
+          description: "Max CPU temperature on {{ $labels.instance }} has been above 70°C for 5 minutes."
+
+      - alert: HostCriticalTemperature
+        expr: max(node_hwmon_temp_celsius{job="node-exporter", chip=~"platform_coretemp_0|thermal_thermal_zone0"}) > 80
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host temperature is critical"
+          description: "Max CPU temperature on {{ $labels.instance }} has been above 80°C for 5 minutes."
 
       - alert: HostLoad15High
         expr: node_load15 / on(instance, job) group_left count without(cpu, mode) (node_cpu_seconds_total{mode="idle"}) > 1.5
@@ -77,3 +113,12 @@ groups:
         annotations:
           summary: "metroLog readiness probe failed"
           description: "metroLog /api/v1/health/ready is failing."
+
+      - alert: ProdServiceAllEndpointsDown
+        expr: count by (service) (probe_success{job=~"blackbox-http|blackbox-tcp", env!="staging"} == 0) == count by (service) (probe_success{job=~"blackbox-http|blackbox-tcp", env!="staging"})
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "All prod endpoints down for service: {{ $labels.service }}"
+          description: "All HTTP/TCP probes for service {{ $labels.service }} are failing for more than 3 minutes. The service is likely down entirely."
