@@ -62,6 +62,8 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-me-before-launch}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # вход только по HTTPS (NPM терминирует TLS): cookie с флагом Secure
+      GF_SECURITY_COOKIE_SECURE: "true"
       GF_SERVER_HTTP_PORT: "3000"
       GF_SERVER_DOMAIN: ${GRAFANA_PUBLIC_DOMAIN:-monitor.mkair-it.ru}
       GF_SERVER_ROOT_URL: ${GRAFANA_PUBLIC_SCHEME:-https}://${GRAFANA_PUBLIC_DOMAIN:-monitor.mkair-it.ru}/

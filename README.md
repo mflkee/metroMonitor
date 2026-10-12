@@ -23,7 +23,7 @@ node-exporter + cAdvisor + blackbox-exporter.
 
 | Сервис | Bind | Наружу |
 |---|---|---|
-| Grafana | `${GRAFANA_BIND_IP}:8090` (сейчас `0.0.0.0`) | да, через Nginx Proxy Manager → `https://monitor.mkair-it.ru` |
+| Grafana | `${GRAFANA_BIND_IP}:8090` (сейчас `127.0.0.1`) | да, через Nginx Proxy Manager → `https://monitor.mkair-it.ru` |
 | Prometheus | `127.0.0.1:9091` | нет |
 | Alertmanager | `127.0.0.1:9093` | нет |
 | blackbox-exporter | `127.0.0.1:9115` | нет |
@@ -114,8 +114,8 @@ docker compose up -d
 ## Алерты
 
 Правила — `prometheus/alerts.yml`: недоступность таргетов стека, здоровье хоста
-(CPU/RAM/fs/temperature/load), провал HTTP/TCP-проб, readness metroLog,
-«все эндпоинты сервиса лежат».
+(CPU/RAM/fs/temperature/load), провал HTTP/TCP-проб (включая пробы mail/cloud),
+readness metroLog, «все эндпоинты сервиса лежат».
 
 Маршрут Alertmanager: `severity = critical|warning` → receiver `telegram`
 (`send_resolved: true`), группировка по `alertname/severity/service`,
@@ -130,12 +130,14 @@ curl -X POST http://127.0.0.1:9093/api/v1/alerts -H 'Content-Type: application/j
 
 ## Известные хвосты
 
-- у проб mail/cloud (`mail-http`, `mail-tcp`) нет правил алертов — они собираются, но не алертят;
-- `GRAFANA_BIND_IP=0.0.0.0` — порт `8090` слушает все интерфейсы (это нужно NPM в докере),
-  при политике файрвола `accept` страница логина Grafana доступна из сети; при желании сузить,
-  не сломав NPM;
 - app-level `/metrics` у сервисов так и не появились (метрики только инфраструктурные);
 - у metroGen нет `/health/live` и `/health/ready`, проба ходит в `/docs`;
 - ротация Docker-логов не настроена;
-- на хосте остались тома старого стека `monitoring_prometheus_data`,
-  `monitoring_grafana_data`, `monitoring_alertmanager_data` и сеть `monitoring_monitoring`.
+- порты БД сервисов (`5432`–`5440`, `6379`–`6383`) публикуются на `0.0.0.0` — наружу они
+  не проброшены (в роутере только 80/443/81 и почта), то есть доступны только из LAN и меша;
+  defence-in-depth был бы `172.17.0.1:<port>:<port>` в compose-файлах сервисов.
+
+Ранее числившееся здесь закрыто: пробы mail/cloud получили правила алертов;
+Grafana слушает `127.0.0.1:8090` (наружу её отдаёт NPM по имени контейнера в сети `monitor`,
+публикация порта для этого не нужна); томa легаси-стека `monitoring_*` и сеть
+`monitoring_monitoring` удалены 2026-10-12.
