@@ -81,6 +81,16 @@ scrape_configs:
         labels:
           service: metroCheck
           probe_name: metrocheck_health
+      - targets:
+          - https://auth.mkair-it.ru/
+        labels:
+          service: metroAuth
+          probe_name: metroauth_frontend
+      - targets:
+          - http://host.docker.internal:8006/api/v1/health
+        labels:
+          service: metroAuth
+          probe_name: metroauth_health
 
     relabel_configs:
       - source_labels:
@@ -178,6 +188,18 @@ scrape_configs:
           env: staging
           probe_name: metrogen_stg_frontend
 
+      - targets:
+          - http://host.docker.internal:9186/
+        labels:
+          service: metroAuth
+          env: staging
+          probe_name: metroauth_stg_frontend
+      - targets:
+          - http://host.docker.internal:9006/api/v1/health
+        labels:
+          service: metroAuth
+          env: staging
+          probe_name: metroauth_stg_health
     relabel_configs:
       - source_labels:
           - __address__

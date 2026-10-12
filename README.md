@@ -1,107 +1,141 @@
-# Monitoring Stack
+# metroMonitoring
 
-Отдельный стек мониторинга для `metroLog` и `metroGen`, не встроенный в их compose-файлы.
+Стек мониторинга МКАИР: Prometheus + Grafana + Alertmanager (+ Telegram-бот) +
+node-exporter + cAdvisor + blackbox-exporter.
+
+Развёрнут на `mkair-server-tmn`, рабочий каталог — `/srv/project/mkair-services/monitoring`
+(именно этот каталог и есть клон репозитория, отдельного «деплоя» нет).
+Этот репозиторий — **источник истины** для конфигов стека.
 
 ## Состав
-- `prometheus`
-- `grafana`
-- `alertmanager`
-- `node-exporter`
-- `cadvisor`
-- `blackbox-exporter`
 
-## Что мониторится на первом этапе
-- хост:
-  - CPU
-  - RAM
-  - root filesystem
-- контейнеры:
-  - ресурсы через `cAdvisor`
-- опубликованные HTTP endpoints:
-  - `metroLog` frontend
-  - `metroLog /api/v1/health`
-  - `metroLog /api/v1/health/ready`
-  - `metroGen` frontend
-  - `metroGen /docs`
-  - `metroGen /api/v1/resolve/status`
-- опубликованные TCP сервисы:
-  - `metroLog` Postgres
-  - `metroLog` Redis
-  - `metroGen` Postgres
+| Сервис | Образ | Роль |
+|---|---|---|
+| `prometheus` | `prom/prometheus:v3.9.1` | сбор метрик, правила алертов, `--web.enable-lifecycle` |
+| `alertmanager` | `prom/alertmanager:v0.30.0` | маршрутизация алертов |
+| `telegram-bot` | `ghcr.io/janw/alertmanager-telegram:edge` | webhook → Telegram |
+| `grafana` | `grafana/grafana:12.3.6` | дашборды (provisioning из файлов) |
+| `blackbox-exporter` | `prom/blackbox-exporter:v0.28.0` | HTTP/TCP-пробы сервисов |
+| `node-exporter` | `prom/node-exporter:v1.10.2` | метрики хоста |
+| `cadvisor` | `ghcr.io/google/cadvisor:0.56.2` | метрики контейнеров |
 
-## Важные принципы
-- стек разворачивается отдельно в `/home/mflkee/apps/monitoring`
-- порты мониторинга биндим только на `127.0.0.1`
-- существующие стеки `metroLog` и `metroGen` не меняются
-- `blackbox-exporter` ходит к host-портам приложений через `host.docker.internal`
-- на этом сервере уже есть host-level `prometheus`, `grafana` и `node_exporter`, поэтому:
-  - compose-`prometheus` использует порт `9091`
-  - compose-`grafana` использует loopback-порт `8090`
-  - compose-`node-exporter` работает только внутри monitoring network и не публикует `9100` на хост
+## Порты на хосте
 
-## Подготовка
-1. Скопировать пример переменных:
+| Сервис | Bind | Наружу |
+|---|---|---|
+| Grafana | `${GRAFANA_BIND_IP}:8090` (сейчас `0.0.0.0`) | да, через Nginx Proxy Manager → `https://monitor.mkair-it.ru` |
+| Prometheus | `127.0.0.1:9091` | нет |
+| Alertmanager | `127.0.0.1:9093` | нет |
+| blackbox-exporter | `127.0.0.1:9115` | нет |
+| cAdvisor | `127.0.0.1:8085` | нет |
+| node-exporter | не публикуется (только сеть `monitor`) | нет |
+
+На хосте уже есть свои host-level `prometheus`, `grafana` и `node_exporter`, поэтому
+compose-сервисы занимают 9091/8090 и не публикуют 9100.
+
+## Что мониторится
+
+`node-exporter`/`cadvisor` — хост (CPU, RAM, root/boot fs, температура, load) и контейнеры.
+Остальное — пробы blackbox через `host.docker.internal` (прод/stage) либо по публичным URL.
+
+### Прод
+
+| Сервис | HTTP-пробы | TCP-пробы |
+|---|---|---|
+| metroLog | `:5173/`, `:8000/api/v1/health`, `:8000/api/v1/health/ready` | postgres `:5432`, redis `:6379` |
+| metroGen | `:5174/`, `:8001/docs`, `:8001/api/v1/resolve/status` | postgres `:5433` |
+| metroCheck | `:8002/health` | postgres `:5434`, redis `:6382` |
+| metroAuth | `https://auth.mkair-it.ru/`, `:8006/api/v1/health` | — |
+
+### Stage (метка `env="staging"`)
+
+| Сервис | HTTP-пробы | TCP-пробы |
+|---|---|---|
+| metroCheck | `:9002/health`, `:9002/health/live`, `:9081/` | postgres `:5436`, redis `:6383` |
+| metroGen | `:9001/api/v1/resolve/status`, `:9001/docs`, `:9174/` | postgres `:5437` |
+| metroAuth | `:9186/`, `:9006/api/v1/health` | — |
+
+### Mail / Cloud (jobs `mail-http`, `mail-tcp`)
+
+Stalwart (`mail.mkair-it.ru/login`, `/.well-known/oauth-authorization-server`),
+Bulwark (`webmail.mkair-it.ru`), Nextcloud (`cloud.mkair-it.ru`),
+порты `993`/`465`/`587`/`143` (IMAP/SMTP), `80`/`81` (NPM).
+
+## Рабочий цикл (как менять конфиг)
+
+Правки делаются в клоне на сервере, а не «на месте в контейнере»:
 
 ```bash
-cd /home/mflkee/apps/monitoring
-cp .env.example .env
+cd /srv/project/mkair-services/monitoring
+git pull --rebase --autostash
+
+# ... правим prometheus/prometheus.yml, alerts.yml, compose и т.п. ...
+scripts/validate.sh              # обязательная проверка синтаксиса
+
+docker compose up -d             # применить (пересоздаёт затронутые контейнеры)
+# либо без пересоздания, только перечитать конфиг Prometheus:
+curl -X POST http://127.0.0.1:9091/-/reload
+# Alertmanager перечитывает конфиг сам (SIGHUP) либо docker compose restart alertmanager
+
+git add -A && git commit -m "..." && git push
 ```
 
-2. Перед первым запуском заменить:
-- `GRAFANA_ADMIN_PASSWORD`
-- при необходимости скорректировать:
-  - `GRAFANA_BIND_IP`, если Grafana нужно публиковать не только на loopback
-  - `GRAFANA_PUBLIC_DOMAIN`
-  - `GRAFANA_PUBLIC_SCHEME`
+Дашборды Grafana **не редактируются в UI** — они провижнятся read-only из
+`grafana/dashboards/overview.json`. Правки вносить в файл, затем `docker compose up -d grafana`.
 
-## Безопасная проверка конфигов
+## Проверка конфигов
 
 ```bash
-cd /home/mflkee/apps/monitoring
-docker compose config
-docker run --rm -v "$PWD/prometheus:/etc/prometheus:ro" prom/prometheus:v3.9.1 promtool check config /etc/prometheus/prometheus.yml
-docker run --rm -v "$PWD/prometheus:/etc/prometheus:ro" prom/prometheus:v3.9.1 promtool check rules /etc/prometheus/alerts.yml
-docker run --rm -v "$PWD/alertmanager:/etc/alertmanager:ro" prom/alertmanager:v0.30.0 amtool check-config /etc/alertmanager/alertmanager.yml
+scripts/validate.sh
 ```
 
-## Запуск
+Скрипт прогоняет `docker compose config`, `promtool check config`, `promtool check rules`
+и `amtool check-config` в тех же образах, что и стек.
+
+## Развёртывание с нуля
 
 ```bash
-cd /home/mflkee/apps/monitoring
+git clone git@github.com:mflkee/metroMonitoring.git /srv/project/mkair-services/monitoring
+cd /srv/project/mkair-services/monitoring
+cp .env.example .env      # заполнить GRAFANA_ADMIN_PASSWORD, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+docker network create monitor    # сеть объявлена external: true и в репозитории не создаётся
 docker compose up -d
 ```
 
-## Локальный доступ
-- Grafana: `http://127.0.0.1:8090`
-- Prometheus: `http://127.0.0.1:9091`
-- Alertmanager: `http://127.0.0.1:9093`
+Тома состояния — `monitor_prometheus_data`, `monitor_grafana_data`,
+`monitor_alertmanager_data` (имя проекта compose — `monitor`).
 
-## Публикация наружу через KeenDNS
-- По умолчанию Grafana слушает только `127.0.0.1:8090`.
-- Если нужен внешний доступ, задайте `GRAFANA_BIND_IP` явным актуальным IP хоста и только после этого обновляйте KeenDNS.
-- После смены USB-сетевого адаптера или DHCP-адреса проверьте IP хоста заново, иначе Grafana останется привязана к старому адресу.
+## Секреты
 
-## После запуска обязательно проверить
-- `docker compose ps`
-- все targets в Prometheus -> `UP`
-- дашборд `Apps Monitoring Overview` в Grafana
-- что порты мониторинга не торчат наружу, а слушают только loopback
+Все секреты только в `.env` (в `.gitignore`, в репозиторий не попадает):
+`GRAFANA_ADMIN_PASSWORD`, `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`.
+Шаблон с описанием переменных — `.env.example`.
 
-## Telegram-алерты
-- Alertmanager шлёт алерты через `janw/alertmanager-telegram` (сервис `telegram-bot` в compose).
-- Токен бота и chat_id задаются в `.env`: `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID` (см. `.env.example`).
-- webhook Alertmanager → `http://telegram-bot:8080/alerts`.
-- Проверка webhook:
-  ```bash
-  curl -X POST http://127.0.0.1:9093/api/v1/alerts -H 'Content-Type: application/json' -d '{"alerts":[{"status":"firing","labels":{"alertname":"Test","severity":"warning","service":"test"},"annotations":{"summary":"test alert","description":"check"}}]}'
-  ```
+## Алерты
 
-## Stage-контейнеры
-- Stage-пробы вынесены в отдельные jobs `blackbox-http-stg` / `blackbox-tcp-stg` с меткой `env="staging"`.
-- Отслеживаются: `metroCheck` (backend :9002, frontend :9081, postgres :5436, redis :6383) и `metroGen` (api :9001, frontend :9174, postgres :5437).
+Правила — `prometheus/alerts.yml`: недоступность таргетов стека, здоровье хоста
+(CPU/RAM/fs/temperature/load), провал HTTP/TCP-проб, readness metroLog,
+«все эндпоинты сервиса лежат».
 
-## Что нужно сделать позже
-- добавить app-level `/metrics`
-- добавить app-level `/health/live` и `/health/ready` для `metroGen`
-- перевести `metroGen` healthcheck с `/docs` на нормальный readiness endpoint
-- решить вопрос с ротацией Docker логов
+Маршрут Alertmanager: `severity = critical|warning` → receiver `telegram`
+(`send_resolved: true`), группировка по `alertname/severity/service`,
+`repeat_interval: 4h`. Остальное уходит в `default-null`.
+
+Проверка webhook:
+
+```bash
+curl -X POST http://127.0.0.1:9093/api/v1/alerts -H 'Content-Type: application/json' \
+  -d '{"alerts":[{"status":"firing","labels":{"alertname":"Test","severity":"warning","service":"test"},"annotations":{"summary":"test alert","description":"check"}}]}'
+```
+
+## Известные хвосты
+
+- у проб mail/cloud (`mail-http`, `mail-tcp`) нет правил алертов — они собираются, но не алертят;
+- `GRAFANA_BIND_IP=0.0.0.0` — порт `8090` слушает все интерфейсы (это нужно NPM в докере),
+  при политике файрвола `accept` страница логина Grafana доступна из сети; при желании сузить,
+  не сломав NPM;
+- app-level `/metrics` у сервисов так и не появились (метрики только инфраструктурные);
+- у metroGen нет `/health/live` и `/health/ready`, проба ходит в `/docs`;
+- ротация Docker-логов не настроена;
+- на хосте остались тома старого стека `monitoring_prometheus_data`,
+  `monitoring_grafana_data`, `monitoring_alertmanager_data` и сеть `monitoring_monitoring`.
