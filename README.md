@@ -61,6 +61,15 @@ Stalwart (`mail.mkair-it.ru/login`, `/.well-known/oauth-authorization-server`),
 Bulwark (`webmail.mkair-it.ru`), Nextcloud (`cloud.mkair-it.ru`),
 порты `993`/`465`/`587`/`143` (IMAP/SMTP), `80`/`81` (NPM).
 
+### Внешние зависимости (job `arshin-http`)
+
+ФГИС «Аршин» — HTTP-проба `GET https://fgis.gost.ru/fundmetrology/eapi/vri?rows=1&start=0`,
+повторяет проверку доступности `ArshinClient.check_availability` из metroLog
+(по тому же ответу metroLog показывает статус Аршина в топбаре).
+Модуль `http_2xx_slow` — таймаут 30 s, интервал раз в минуту: Аршин обычно
+отвечает за 0.2–2 s, но регулярно зависает на десятки секунд, и стандартный
+5-секундный `http_2xx` давал бы ложные провалы.
+
 ## Рабочий цикл (как менять конфиг)
 
 Правки делаются в клоне на сервере, а не «на месте в контейнере»:
@@ -115,7 +124,14 @@ docker compose up -d
 
 Правила — `prometheus/alerts.yml`: недоступность таргетов стека, здоровье хоста
 (CPU/RAM/fs/temperature/load), провал HTTP/TCP-проб (включая пробы mail/cloud),
-readness metroLog, «все эндпоинты сервиса лежат».
+readness metroLog, «все эндпоинты сервиса лежат», недоступность ФГИС «Аршин»
+(`ArshinUnavailable`).
+
+`ArshinUnavailable` (critical, группа `external-deps`): проба `arshin-http` не
+проходит непрерывно 5 минут → приходит сообщение, что Аршин сломан; уведомление
+о восстановлении отправляется только после 2 минут стабильной доступности
+(`keep_firing_for: 2m` — если Аршин снова отвалится в этом окне, алерт не
+закроется и «восстановлено» не уйдёт).
 
 Маршрут Alertmanager: `severity = critical|warning` → receiver `telegram`
 (`send_resolved: true`), группировка по `alertname/severity/service`,

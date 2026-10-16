@@ -10,6 +10,21 @@ modules:
         - HTTP/2.0
       follow_redirects: true
 
+  # Медленные внешние API (ФГИС «Аршин»): тот же http_2xx, но с таймаутом 30 s
+  # — как arshin_api_timeout_seconds в metroLog. Аршин обычно отвечает за 0.2–2 s,
+  # но регулярно «зависает» на десятки секунд; с 5-секундным таймаутом http_2xx
+  # такие зависания давали бы ложные провалы пробы.
+  http_2xx_slow:
+    prober: http
+    timeout: 30s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      valid_http_versions:
+        - HTTP/1.1
+        - HTTP/2.0
+      follow_redirects: true
+
   tcp_connect:
     prober: tcp
     timeout: 5s

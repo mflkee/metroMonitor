@@ -122,3 +122,22 @@ groups:
         annotations:
           summary: "All prod endpoints down for service: {{ $labels.service }}"
           description: "All HTTP/TCP probes for service {{ $labels.service }} are failing for more than 3 minutes. The service is likely down entirely."
+
+  - name: external-deps
+    rules:
+      # Доступность ФГИС «Аршин» — внешней зависимости metroLog.
+      # Условие срабатывания: проба не проходит непрерывно 5 минут (`for: 5m`).
+      # `keep_firing_for: 2m` держит алерт в firing ещё 2 минуты после
+      # восстановления связи: если Аршин снова отвалится в этом окне, алерт не
+      # закроется и уведомление о восстановлении не уйдёт — то есть «восстановлено»
+      # отправляется только после 2 минут стабильной доступности.
+      - alert: ArshinUnavailable
+        expr: probe_success{job="arshin-http"} == 0
+        for: 5m
+        keep_firing_for: 2m
+        labels:
+          severity: critical
+          service: arshin
+        annotations:
+          summary: "ФГИС «Аршин» не отвечает"
+          description: "Проба {{ $labels.probe_name }} ({{ $labels.instance }}) к API ФГИС «Аршин» не проходит уже более 5 минут: поиск, просмотр и импорт СИ/ЭСИ в metroLog недоступны. О восстановлении придёт отдельное уведомление после 2 минут стабильной доступности."

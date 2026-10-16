@@ -328,3 +328,33 @@ scrape_configs:
         target_label: instance
       - target_label: __address__
         replacement: blackbox-exporter:9115
+
+  # ── Внешние зависимости (ФГИС «Аршин») ───────────────────
+  # Проба повторяет проверку доступности из metroLog
+  # (`ArshinClient.check_availability`: GET /fundmetrology/eapi/vri?rows=1&start=0;
+  # metroLog по этому же ответу показывает статус Аршина в топбаре).
+  # Аршин отвечает нестабильно (то 0.2 s, то зависание >30 s), поэтому у пробы
+  # длинный таймаут (module http_2xx_slow) и интервал раз в минуту, а алерт
+  # требует непрерывного провала в течение 5 минут.
+  - job_name: arshin-http
+    metrics_path: /probe
+    scrape_interval: 1m
+    scrape_timeout: 35s
+    params:
+      module:
+        - http_2xx_slow
+    static_configs:
+      - targets:
+          - https://fgis.gost.ru/fundmetrology/eapi/vri?rows=1&start=0
+        labels:
+          service: arshin
+          probe_name: arshin_eapi_vri
+    relabel_configs:
+      - source_labels:
+          - __address__
+        target_label: __param_target
+      - source_labels:
+          - __param_target
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
