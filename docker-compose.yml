@@ -12,8 +12,11 @@ services:
       - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-15d}
       - --web.enable-lifecycle
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      # Монтируется каталог, а не отдельные файлы: git pull/checkout заменяет
+      # файл через rename (новый inode), и при пофайловом bind-mount контейнер
+      # навсегда остаётся привязан к старому inode — curl -X POST /-/reload
+      # перечитывал бы старую конфигурацию.
+      - ./prometheus:/etc/prometheus:ro
       - prometheus_data:/prometheus
     ports:
       - "127.0.0.1:9091:9090"
@@ -33,7 +36,7 @@ services:
       - --config.file=/etc/alertmanager/alertmanager.yml
       - --storage.path=/alertmanager
     volumes:
-      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./alertmanager:/etc/alertmanager:ro
       - alertmanager_data:/alertmanager
     ports:
       - "127.0.0.1:9093:9093"
@@ -86,7 +89,7 @@ services:
     command:
       - --config.file=/etc/blackbox_exporter/blackbox.yml
     volumes:
-      - ./blackbox/blackbox.yml:/etc/blackbox_exporter/blackbox.yml:ro
+      - ./blackbox:/etc/blackbox_exporter:ro
     ports:
       - "127.0.0.1:9115:9115"
     extra_hosts:

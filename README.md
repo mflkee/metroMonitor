@@ -81,13 +81,24 @@ git pull --rebase --autostash
 # ... правим prometheus/prometheus.yml, alerts.yml, compose и т.п. ...
 scripts/validate.sh              # обязательная проверка синтаксиса
 
-docker compose up -d             # применить (пересоздаёт затронутые контейнеры)
-# либо без пересоздания, только перечитать конфиг Prometheus:
-curl -X POST http://127.0.0.1:9091/-/reload
-# Alertmanager перечитывает конфиг сам (SIGHUP) либо docker compose restart alertmanager
+docker compose up -d             # применить правки compose (пересоздаёт затронутые сервисы)
+
+# Правки только в файлах конфигов применяются без пересоздания:
+curl -X POST http://127.0.0.1:9091/-/reload      # prometheus.yml + alerts.yml
+docker kill -s HUP metroMonitoring_blackbox      # blackbox.yml
+docker kill -s HUP metroMonitoring_alertmanager  # alertmanager.yml
 
 git add -A && git commit -m "..." && git push
 ```
+
+Конфиги стека монтируются **каталогами** (`./prometheus`, `./blackbox`,
+`./alertmanager`), а не отдельными файлами. Причина: git заменяет файл через
+rename (новый inode), и при пофайловом bind-mount контейнер навсегда остаётся
+привязан к старому inode — reload перечитывает старую конфигурацию, хотя на
+хосте файл уже новый. По той же причине `docker compose up -d` **не применяет**
+правки, если менялись только файлы конфигов (определение сервиса не менялось):
+для них нужны reload-команды выше, а `--force-recreate` — только когда меняли
+сами `volumes`/`command` в compose.
 
 Дашборды Grafana **не редактируются в UI** — они провижнятся read-only из
 `grafana/dashboards/overview.json`. Правки вносить в файл, затем `docker compose up -d grafana`.
